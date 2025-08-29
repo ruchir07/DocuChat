@@ -83,6 +83,32 @@ app.post("/chats/:chatId/files", upload.single("pdf"), async (req, res) => {
   });
 });
 
+app.post("/chats/:chatId/messages", async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const { content, role } = req.body; // role can be "user" or "assistant"
+
+    if (!chatId) return res.status(400).json({ error: "chatId is required" });
+    if (!content) return res.status(400).json({ error: "content is required" });
+
+    const chat = await prisma.chat.findUnique({ where: { id: chatId } });
+    if (!chat) return res.status(404).json({ error: "Chat not found" });
+
+    const message = await prisma.message.create({
+      data: {
+        chatId,
+        role: role || "user",
+        content,
+      },
+    });
+
+    res.json({ message });
+  } catch (err) {
+    console.error("❌ Error creating message:", err);
+    res.status(500).json({ error: "Failed to send message" });
+  }
+});
+
 app.get("/chat", async (req, res) => {
   console.log("Incoming query:", req.query);
   const { message: userQuery, chatId } = req.query;
@@ -131,7 +157,7 @@ You are DocuChat, an expert technical writing assistant.
 
 You are a helpful AI assistant. When answering:
 
-• ONLY use the information in the "Context" section.
+• ONLY use the information in the "Context" section and while answering only refer to content in "Context".
 • If you cannot answer with high confidence, reply exactly with: "I’m sorry — I couldn’t find that in the document."
 
 Follow this style guide:
@@ -211,6 +237,49 @@ app.get("/chats", async (req, res) => {
   }
 });
 
+app.delete("/chats/:chatId", async (req, res) => {
+  try {
+    const { chatId } = req.params;
+
+    // Make sure the chat exists
+    const chat = await prisma.chat.findUnique({ where: { id: chatId } });
+    if (!chat) return res.status(404).json({ error: "Chat not found" });
+
+    // Delete all related messages
+    await prisma.message.deleteMany({ where: { chatId } });
+
+    // Delete all related files
+    await prisma.file.deleteMany({ where: { chatId } });
+
+    // Delete the chat itself
+    await prisma.chat.delete({ where: { id: chatId } });
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Error deleting chat:", err);
+    return res.status(500).json({ error: "Failed to delete chat" });
+  }
+});
+
+app.patch("/chats/:chatId",async(req,res) => {
+  try {
+    const { chatId } = req.params;
+    const { name } = req.body;
+
+    if (!name) return res.status(400).json({ error: "Name is required" });
+
+    const updatedChat = await prisma.chat.update({
+      where: { id: chatId },
+      data: { name },
+    });
+
+    res.json(updatedChat);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to rename chat" });
+  }
+});
+
 app.get("/chats/:id/messages", async (req, res) => {
   try {
     const chatId = req.params.id;
@@ -239,7 +308,18 @@ app.get("/chats/:id",async(req,res) => {
     res.status(500).json({ error: err.message });
   }
 
-})
+});
+
+app.get("/chats/:chatId/files", async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const files = await prisma.file.findMany({ where: { chatId } });
+    res.json(files);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch files" });
+  }
+});
 
 
 app.listen(8000, () => {
